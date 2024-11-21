@@ -1,21 +1,13 @@
 const router = require("express").Router();
-const { Vendor } = require("../models/userModel");
+const { GeneralUser } = require("../models/userModel");
 const { isEmail } = require("validator");
-const auth = require("../middlewares/auth");
 const bcrypt = require("bcryptjs");
+const auth = require("../middlewares/auth");
 
-// Regiter a new vendor
+// Regiter a new user
 router.post("/register", async (req, res) => {
   try {
-    const {
-      firstName,
-      lastName,
-      businessName,
-      email,
-      password,
-      phoneNumber,
-      address,
-    } = req.body;
+    const { firstName, lastName, email, password, phoneNumber } = req.body;
 
     if (!firstName) {
       return res.status(400).json({ message: "First name is required" });
@@ -41,49 +33,16 @@ router.post("/register", async (req, res) => {
       return res.status(400).json({ message: "Email is required" });
     }
 
+    if (isEmail(email) === false) {
+      return res.status(400).json({ message: "Invalid email address" });
+    }
+
     if (!phoneNumber) {
       return res.status(400).json({ message: "Phone number is required" });
     }
 
     if (String(phoneNumber).length != 10) {
       return res.status(400).json({ message: "Invalid phone number" });
-    }
-
-    if (!businessName) {
-      return res.status(400).json({ message: "Bussiness name is required" });
-    }
-
-    if (!address) {
-      return res.status(400).json({ message: "Address is required" });
-    }
-
-    if (
-      !address.addressLine ||
-      !address.district ||
-      !address.city ||
-      !address.state ||
-      !address.pincode ||
-      !address.zone
-    ) {
-      return res.status(400).json({ message: "Address is incomplete" });
-    }
-
-    if (isEmail(email) === false) {
-      return res.status(400).json({ message: "Invalid email address" });
-    }
-
-    const isEmailAlreadyUsed = await Vendor.findOne({ email });
-
-    if (isEmailAlreadyUsed) {
-      return res.status(400).json({ message: "Email already exists" });
-    }
-
-    const isPhoneNumberAlreadyUsed = await Vendor.findOne({
-      phoneNumber,
-    });
-
-    if (isPhoneNumberAlreadyUsed) {
-      return res.status(400).json({ message: "Phone number already exists" });
     }
 
     if (!password) {
@@ -96,20 +55,32 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    const vendor = new Vendor({
+    const isEmailAlreadyUsed = await GeneralUser.findOne({ email });
+
+    if (isEmailAlreadyUsed) {
+      return res.status(400).json({ message: "Email already exists" });
+    }
+
+    const isPhoneNumberAlreadyUsed = await GeneralUser.findOne({
+      phoneNumber,
+    });
+
+    if (isPhoneNumberAlreadyUsed) {
+      return res.status(400).json({ message: "Phone number already exists" });
+    }
+
+    const user = new GeneralUser({
       firstName,
       lastName,
       email,
       password,
       phoneNumber,
-      businessName,
-      address,
     });
 
-    const token = await vendor.generateAuthToken();
+    const token = await user.generateAuthToken();
+    await user.save();
 
-    await vendor.save();
-    res.status(200).json({ vendor, token });
+    res.status(201).json({ user, token });
   } catch (error) {
     if (
       error.errorResponse.keyPattern.phoneNumber ||
@@ -123,11 +94,11 @@ router.post("/register", async (req, res) => {
     ) {
       return res.status(400).json({ message: "Email already exists" });
     }
-    res.status(500).json(error);
+    res.status(500).json({ message: error.message });
   }
 });
 
-// Login an admin
+// Login a user
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -139,54 +110,48 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ message: "Password is required" });
     }
 
-    const vendor = await Vendor.findOne({ email });
-    if (!vendor) {
+    const user = await GeneralUser.findOne({ email });
+    if (!user) {
       return res.status(400).json({ message: "Invalid email" });
     }
 
-    const isPasswordCorrect = await bcrypt.compare(password, vendor.password);
+    const isPasswordCorrect = await bcrypt.compare(password, user.password);
 
     if (!isPasswordCorrect) {
       return res.status(400).json({ message: "Invalid password" });
     }
 
-    const token = await vendor.generateAuthToken();
-    res.status(200).json({ vendor, token });
+    const token = await user.generateAuthToken();
+    res.status(200).json({ user, token });
   } catch (error) {
     res.status(500).json(error);
   }
 });
 
-// Updating a vendor profile
+// Updating a user profile
 router.put("/update-profile", auth, async (req, res) => {
   try {
-    if (req.user.userType !== "Vendor") {
+    if (req.user.userType !== "GeneralUser") {
       return res
         .status(401)
-        .json({ message: "Unauthorized!!! Only vendor has this permission" });
+        .json({ message: "Unauthorized!!! Only user has this permission" });
     }
-    const vendor = req.user;
-    let availableUpdates = [
-      "firstName",
-      "lastName",
-      "phoneNumber",
-      "address",
-      "businessName",
-    ];
+    const user = req.user;
+    let availableUpdates = ["firstName", "lastName", "phoneNumber", "address"];
 
-    const vendorUpdating = Object.keys(req.body);
-    const isValidOperation = vendorUpdating.every((update) =>
+    const userUpdating = Object.keys(req.body);
+    const isValidOperation = userUpdating.every((update) =>
       availableUpdates.includes(update)
     );
 
     if (!isValidOperation) {
       return res.json({ message: "Invalid updates" });
     }
-    vendorUpdating.forEach((update) => {
-      vendor[update] = req.body[update];
+    userUpdating.forEach((update) => {
+      user[update] = req.body[update];
     });
 
-    await vendor.save();
+    await user.save();
     res.json({ message: "Profile updated successfully" });
   } catch (error) {
     if (
@@ -202,13 +167,13 @@ router.put("/update-profile", auth, async (req, res) => {
 // Change password
 router.put("/change-password", auth, async (req, res) => {
   try {
-    if (req.user.userType !== "Vendor") {
+    if (req.user.userType !== "GeneralUser") {
       return res
         .status(401)
-        .json({ message: "Unauthorized!!! Only vendor has this permission" });
+        .json({ message: "Unauthorized!!! Only user has this permission" });
     }
     const { currentPassword, newPassword } = req.body;
-    const vendor = req.user;
+    const user = req.user;
 
     if (!currentPassword) {
       return res.status(400).json({ message: "Current password is required" });
@@ -226,7 +191,7 @@ router.put("/change-password", auth, async (req, res) => {
 
     const isCurrentPasswordCorrect = await bcrypt.compare(
       currentPassword,
-      vendor.password
+      user.password
     );
 
     if (!isCurrentPasswordCorrect) {
@@ -239,21 +204,21 @@ router.put("/change-password", auth, async (req, res) => {
       });
     }
 
-    vendor.password = newPassword;
-    await vendor.save();
+    user.password = newPassword;
+    await user.save();
     res.json({ message: "Password changed successfully" });
   } catch (error) {
     res.status(500).json(error);
   }
 });
 
-// Logout a vendor
+// Logout a user
 router.post("/logout", auth, async (req, res) => {
   try {
-    if (req.user.userType !== "Vendor") {
+    if (req.user.userType !== "GeneralUser") {
       return res
         .status(401)
-        .json({ message: "Unauthorized!!! Only vendor has this permission" });
+        .json({ message: "Unauthorized!!! Only user has this permission" });
     }
     req.user.tokens = req.user.tokens.filter((token) => {
       return token.token !== req.token;

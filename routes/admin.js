@@ -81,8 +81,20 @@ router.post("/register", async (req, res) => {
 
     await admin.save();
     res.status(200).json({ admin, token });
-  } catch (err) {
-    res.status(500).json(err);
+  } catch (error) {
+    if (
+      error.errorResponse.keyPattern.phoneNumber ||
+      error.errorResponse.keyValue.phoneNumber
+    ) {
+      return res.status(400).json({ message: "Phone number already exists" });
+    }
+    if (
+      error.errorResponse.keyPattern.email ||
+      error.errorResponse.keyValue.email
+    ) {
+      return res.status(400).json({ message: "Email already exists" });
+    }
+    res.status(500).json(error);
   }
 });
 

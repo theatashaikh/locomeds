@@ -14,12 +14,12 @@ const addressSchema = new mongoose.Schema({
     required: true,
     lowercase: true,
   },
-  district: {
+  city: {
     type: String,
     required: true,
     lowercase: true,
   },
-  city: {
+  district: {
     type: String,
     required: true,
     lowercase: true,
@@ -38,7 +38,6 @@ const addressSchema = new mongoose.Schema({
   pincode: {
     type: Number,
     required: true,
-    lowercase: true,
   },
 });
 
@@ -153,7 +152,7 @@ const Vendor = User.discriminator(
 );
 
 // Discriminator for Regular User
-const RegularUser = User.discriminator(
+const GeneralUser = User.discriminator(
   "GeneralUser",
   new mongoose.Schema({
     address: addressSchema,
@@ -164,4 +163,4 @@ const RegularUser = User.discriminator(
   })
 );
 
-module.exports = { User, Admin, Vendor, RegularUser };
+module.exports = { User, Admin, Vendor, GeneralUser };
