@@ -1,26 +1,26 @@
-const Admin = require("../models/adminModel");
+const { User } = require("../models/userModel");
 const jwt = require("jsonwebtoken");
 
-async function adminAuth(req, res, next) {
+async function auth(req, res, next) {
   try {
     const token = req.header("Authorization");
     const decoded = jwt.verify(token, process.env.JWT_AUTH_TOKEN);
 
-    const admin = await Admin.findOne({
+    const user = await User.findOne({
       _id: decoded._id,
       "tokens.token": token,
     });
 
-    if (!admin) {
+    if (!user) {
       throw new Error();
     }
 
     req.token = token;
-    req.admin = admin;
+    req.user = user;
     next();
   } catch (error) {
     res.status(401).json({ message: "Unauthorized, Please Authenticate" });
   }
 }
 
-module.exports = adminAuth;
+module.exports = auth;

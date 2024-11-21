@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const adminAuth = require("../middlewares/adminAuth");
+const auth = require("../middlewares/auth");
 const Product = require("../models/productModel");
 const upload = require("../middlewares/uploads");
 
@@ -10,9 +10,13 @@ const {
 
 router.post(
   "/add-product",
-  adminAuth,
+  auth,
   upload.array("productImages", 4),
   async (req, res) => {
+    if (req.user.userType !== "Admin") {
+      return res.status(403).json({ message: "Unauthorized" });
+    }
+
     try {
       const {
         name,
@@ -44,10 +48,10 @@ router.post(
         return res.status(400).json({ message: "Quantity is required" });
       }
 
-      if (quantity < 1) {
+      if (quantity < 0) {
         return res
           .status(400)
-          .json({ message: "Quantity must be greater than 0" });
+          .json({ message: "Quantity must not be in negative" });
       }
 
       if (!description) {
@@ -64,13 +68,17 @@ router.post(
 
       const files = req.files;
 
+      if (!files || files.length <= 0) {
+        return res
+          .status(400)
+          .json({ message: "At least one image is required" });
+      }
+
       // Upload images to Firebase if files exist
       const imageUrls = [];
-      if (files && files.length > 0) {
-        for (const file of files) {
-          const imageUrl = await uploadToFirebase(file);
-          imageUrls.push(imageUrl);
-        }
+      for (const file of files) {
+        const imageUrl = await uploadToFirebase(file);
+        imageUrls.push(imageUrl);
       }
 
       const product = new Product({
@@ -95,7 +103,7 @@ router.post(
 );
 
 // Get all products
-router.get("/all-products", async (req, res) => {
+router.get("/all-products", auth, async (req, res) => {
   try {
     const products = await Product.find();
     res.status(200).json({
@@ -112,7 +120,7 @@ router.get("/all-products", async (req, res) => {
 });
 
 // Get a single product by ID
-router.get("/:id", async (req, res) => {
+router.get("/:id", auth, async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) {
@@ -135,50 +143,109 @@ router.get("/:id", async (req, res) => {
 });
 
 // Update a product by ID
-router.put("/:id", upload.array("productImages", 4), async (req, res) => {
-  try {
-    const productId = req.params.id;
-    const updateData = req.body;
-    const files = req.files;
 
-    // Upload new images if provided
-    if (files && files.length > 0) {
-      const newImageUrls = [];
-      for (const file of files) {
-        const imageUrl = await uploadToFirebase(file);
-        newImageUrls.push(imageUrl);
+// Middleware to check if user is authorized to update product
+const checkProductUpdateAuthorization = (req, res, next) => {
+  const allowedUserTypes = ["Admin", "Vendor"];
+  if (!allowedUserTypes.includes(req.user.userType)) {
+    return res.status(403).json({ message: "Unauthorized" });
+  }
+  next();
+};
+
+// Handle image uploads
+const processImageUploads = async (files) => {
+  if (!files || files.length === 0) return [];
+
+  return Promise.all(files.map((file) => uploadToFirebase(file)));
+};
+
+// Handle image deletions
+const processImageDeletions = async (imagesToRemove) => {
+  if (!imagesToRemove || imagesToRemove.length === 0) return;
+
+  return Promise.all(
+    imagesToRemove.map(async (imageUrl) => {
+      try {
+        await deleteFromFirebase(imageUrl);
+      } catch (error) {
+        console.error(`Failed to delete image: ${imageUrl}`, error);
+      }
+    })
+  );
+};
+
+router.put(
+  "/:id",
+  auth,
+  upload.array("productImages", 4),
+  checkProductUpdateAuthorization,
+  async (req, res) => {
+    try {
+      // destructuring the id from the params as alias productId
+      const { id: productId } = req.params;
+      const updateData = req.body;
+      const files = req.files;
+
+      // Find the product
+      const product = await Product.findById(productId);
+      if (!product) {
+        return res.status(404).json({
+          success: false,
+          message: "Product not found",
+        });
       }
 
-      updateData.imagesUrl = [...(updateData.imagesUrl || []), ...newImageUrls];
-    }
+      // Process image removals
+      const imagesToRemove = req.body.removeTheseImages
+        ? JSON.parse(req.body.removeTheseImages)
+        : [];
 
-    const product = await Product.findByIdAndUpdate(productId, updateData, {
-      new: true,
-    });
+      if (imagesToRemove.length > 0) {
+        await processImageDeletions(imagesToRemove);
 
-    if (!product) {
-      return res.status(404).json({
+        // Remove deleted images from product
+        product.imageUrls = product.imageUrls.filter(
+          (imageUrl) => !imagesToRemove.includes(imageUrl)
+        );
+      }
+
+      // Process new image uploads
+      const newImageUrls = await processImageUploads(files);
+
+      if (newImageUrls.length > 0) {
+        product.imageUrls = [...(product.imageUrls || []), ...newImageUrls];
+      }
+
+      // Update product fields
+      Object.keys(updateData).forEach((key) => {
+        product[key] = updateData[key];
+      });
+
+      // Save updated product
+      await product.save();
+
+      res.status(200).json({
+        success: true,
+        message: "Product updated successfully",
+        data: product,
+      });
+    } catch (error) {
+      res.status(500).json({
         success: false,
-        message: "Product not found",
+        message: "Error updating product",
+        error: error.message,
       });
     }
-
-    res.status(200).json({
-      success: true,
-      message: "Product updated successfully",
-      data: product,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Error updating product",
-      error: error.message,
-    });
   }
-});
+);
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", auth, async (req, res) => {
   try {
+    if (req.user.userType !== "Admin") {
+      return res.status(403).json({ message: "Unauthorized" });
+    }
+
     // First find the product to get image URLs
     const product = await Product.findById(req.params.id);
 

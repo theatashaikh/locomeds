@@ -1,8 +1,7 @@
 const router = require("express").Router();
-const Vendor = require("../models/vendorModel");
-const Admin = require("../models/adminModel");
+const { Vendor } = require("../models/userModel");
 const { isEmail } = require("validator");
-const vendorAuth = require("../middlewares/vendorAuth");
+const auth = require("../middlewares/auth");
 const bcrypt = require("bcryptjs");
 
 // Regiter a new vendor
@@ -73,21 +72,17 @@ router.post("/register", async (req, res) => {
       return res.status(400).json({ message: "Invalid email address" });
     }
 
-    const isEmailAlreadyUsedAsAdmin = await Admin.findOne({ email });
-    const isEmailAlreadyUsedAsVendor = await Vendor.findOne({ email });
+    const isEmailAlreadyUsed = await Vendor.findOne({ email });
 
-    if (isEmailAlreadyUsedAsAdmin || isEmailAlreadyUsedAsVendor) {
+    if (isEmailAlreadyUsed) {
       return res.status(400).json({ message: "Email already exists" });
     }
 
-    const isPhoneNumberAlreadyUsedAsAdmin = await Admin.findOne({
-      phoneNumber,
-    });
-    const isPhoneNumberAlreadyUsedAsVendor = await Vendor.findOne({
+    const isPhoneNumberAlreadyUsed = await Vendor.findOne({
       phoneNumber,
     });
 
-    if (isPhoneNumberAlreadyUsedAsAdmin || isPhoneNumberAlreadyUsedAsVendor) {
+    if (isPhoneNumberAlreadyUsed) {
       return res.status(400).json({ message: "Phone number already exists" });
     }
 
@@ -151,9 +146,14 @@ router.post("/login", async (req, res) => {
 });
 
 // Updating a vendor profile
-router.put("/update-profile", vendorAuth, async (req, res) => {
+router.put("/update-profile", auth, async (req, res) => {
   try {
-    const vendor = req.vendor;
+    if (req.user.userType !== "Vendor") {
+      return res
+        .status(401)
+        .json({ message: "Unauthorized!!! Only vendor has this permission" });
+    }
+    const vendor = req.user;
     let availableUpdates = [
       "firstName",
       "lastName",
@@ -171,7 +171,7 @@ router.put("/update-profile", vendorAuth, async (req, res) => {
       return res.json({ message: "Invalid updates" });
     }
     vendorUpdating.forEach((update) => {
-      req.vendor[update] = req.body[update];
+      vendor[update] = req.body[update];
     });
 
     console.log();
@@ -190,10 +190,15 @@ router.put("/update-profile", vendorAuth, async (req, res) => {
 });
 
 // Change password
-router.put("/change-password", vendorAuth, async (req, res) => {
+router.put("/change-password", auth, async (req, res) => {
   try {
+    if (req.user.userType !== "Vendor") {
+      return res
+        .status(401)
+        .json({ message: "Unauthorized!!! Only vendor has this permission" });
+    }
     const { currentPassword, newPassword } = req.body;
-    const vendor = req.vendor;
+    const vendor = req.user;
 
     if (!currentPassword) {
       return res.status(400).json({ message: "Current password is required" });
@@ -233,12 +238,17 @@ router.put("/change-password", vendorAuth, async (req, res) => {
 });
 
 // Logout a vendor
-router.post("/logout", vendorAuth, async (req, res) => {
+router.post("/logout", auth, async (req, res) => {
   try {
-    req.vendor.tokens = req.vendor.tokens.filter((token) => {
+    if (req.user.userType !== "Vendor") {
+      return res
+        .status(401)
+        .json({ message: "Unauthorized!!! Only vendor has this permission" });
+    }
+    req.user.tokens = req.user.tokens.filter((token) => {
       return token.token !== req.token;
     });
-    await req.vendor.save();
+    await req.user.save();
     res.json({ message: "Logged out successfully" });
   } catch (error) {
     res.status(500).send(error);

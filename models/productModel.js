@@ -12,6 +12,10 @@ const productSchema = new mongoose.Schema({
     type: Number,
     required: true,
   },
+  composition: {
+    type: String,
+    trim: true,
+  },
   quantity: {
     type: Number,
     required: true,
@@ -22,14 +26,12 @@ const productSchema = new mongoose.Schema({
     trim: true,
   },
   category: {
-    type: String,
-    required: true,
-    trim: true,
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Category",
   },
   imageUrls: [{ type: String }],
   manufacturer: {
     type: String,
-    required: true,
     trim: true,
   },
   isAvailable: {

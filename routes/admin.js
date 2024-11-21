@@ -1,9 +1,8 @@
 const router = require("express").Router();
-const Admin = require("../models/adminModel");
-const Vendor = require("../models/vendorModel");
+const { Admin } = require("../models/userModel");
 const { isEmail } = require("validator");
-const adminAuth = require("../middlewares/adminAuth");
 const bcrypt = require("bcryptjs");
+const auth = require("../middlewares/auth");
 
 // Regiter a new admin
 router.post("/register", async (req, res) => {
@@ -46,21 +45,17 @@ router.post("/register", async (req, res) => {
       return res.status(400).json({ message: "Invalid email address" });
     }
 
-    const isEmailAlreadyUsedAsAdmin = await Admin.findOne({ email });
-    const isEmailAlreadyUsedAsVendor = await Vendor.findOne({ email });
+    const isEmailAlreadyUsed = await Admin.findOne({ email });
 
-    if (isEmailAlreadyUsedAsAdmin || isEmailAlreadyUsedAsVendor) {
+    if (isEmailAlreadyUsed) {
       return res.status(400).json({ message: "Email already exists" });
     }
 
-    const isPhoneNumberAlreadyUsedAsAdmin = await Admin.findOne({
-      phoneNumber,
-    });
-    const isPhoneNumberAlreadyUsedAsVendor = await Vendor.findOne({
+    const isPhoneNumberAlreadyUsed = await Admin.findOne({
       phoneNumber,
     });
 
-    if (isPhoneNumberAlreadyUsedAsAdmin || isPhoneNumberAlreadyUsedAsVendor) {
+    if (isPhoneNumberAlreadyUsed) {
       return res.status(400).json({ message: "Phone number already exists" });
     }
 
@@ -122,9 +117,15 @@ router.post("/login", async (req, res) => {
 });
 
 // Updating an admin profile
-router.put("/update-profile", adminAuth, async (req, res) => {
+router.put("/update-profile", auth, async (req, res) => {
   try {
-    const admin = req.admin;
+    if (req.user.userType !== "Admin") {
+      return res
+        .status(401)
+        .json({ message: "Unauthorized!!! only Admin has the permission" });
+    }
+
+    const admin = req.user;
     let availableUpdates = ["firstName", "lastName", "phoneNumber"];
 
     const adminUpdating = Object.keys(req.body);
@@ -135,11 +136,10 @@ router.put("/update-profile", adminAuth, async (req, res) => {
     if (!isValidOperation) {
       return res.json({ message: "Invalid updates" });
     }
-    adminUpdating.forEach((update) => {
-      req.admin[update] = req.body[update];
-    });
 
-    console.log();
+    adminUpdating.forEach((update) => {
+      admin[update] = req.body[update];
+    });
 
     await admin.save();
     res.json({ message: "Profile updated successfully" });
@@ -155,10 +155,15 @@ router.put("/update-profile", adminAuth, async (req, res) => {
 });
 
 // Change password
-router.put("/change-password", adminAuth, async (req, res) => {
+router.put("/change-password", auth, async (req, res) => {
   try {
+    if (req.user.userType !== "Admin") {
+      return res
+        .status(401)
+        .json({ message: "Unauthorized!!! only Admin has the permission" });
+    }
     const { currentPassword, newPassword } = req.body;
-    const admin = req.admin;
+    const admin = req.user;
 
     if (!currentPassword) {
       return res.status(400).json({ message: "Current password is required" });
@@ -198,12 +203,17 @@ router.put("/change-password", adminAuth, async (req, res) => {
 });
 
 // Logout an admin
-router.post("/logout", adminAuth, async (req, res) => {
+router.post("/logout", auth, async (req, res) => {
   try {
-    req.admin.tokens = req.admin.tokens.filter((token) => {
+    if (req.user.userType !== "Admin") {
+      return res
+        .status(401)
+        .json({ message: "Unauthorized!!! only Admin has the permission" });
+    }
+    req.user.tokens = req.user.tokens.filter((token) => {
       return token.token !== req.token;
     });
-    await req.admin.save();
+    await req.user.save();
     res.json({ message: "Logged out successfully" });
   } catch (error) {
     res.status(500).send(error);

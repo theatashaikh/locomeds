@@ -1,6 +1,6 @@
 const router = require("express").Router();
 const Category = require("../models/categoryModel");
-const adminAuth = require("../middlewares/adminAuth");
+const auth = require("../middlewares/auth");
 
 // Get all categories
 router.get("/get-categories", async (req, res) => {
@@ -13,17 +13,24 @@ router.get("/get-categories", async (req, res) => {
 });
 
 // Add category
-router.post("/add-category", adminAuth, async (req, res) => {
+router.post("/add-category", auth, async (req, res) => {
   try {
-    const { category } = req.body;
-
-    const doesCategoryExists = Category.findOne({ category });
-    if (doesCategoryExists) {
-      return res.status(400).json({ message: "Category already exists" });
+    if (req.user.userType !== "Admin") {
+      return res
+        .status(401)
+        .json({ message: "Unauthorized!!! only Admin has the permission" });
     }
+    const { category } = req.body;
 
     if (!category) {
       return res.status(400).json({ message: "Category name is required" });
+    }
+
+    const doesCategoryExists = await Category.findOne({ category });
+
+    console.log(doesCategoryExists);
+    if (doesCategoryExists) {
+      return res.status(400).json({ message: "Category already exists" });
     }
 
     const newCategory = new Category({
@@ -38,17 +45,22 @@ router.post("/add-category", adminAuth, async (req, res) => {
 });
 
 // insert many categories
-router.post("/add-many-categories", adminAuth, async (req, res) => {
+router.post("/add-many-categories", auth, async (req, res) => {
   try {
+    if (req.user.userType !== "Admin") {
+      return res
+        .status(401)
+        .json({ message: "Unauthorized!!! only Admin has the permission" });
+    }
     const { categories } = req.body;
 
     if (categories.length === 0) {
       return res.status(400).json({ message: "Category name is required" });
     }
 
-    for (let i = 0; i < categories.length; i++) {
+    for (let category of categories) {
       const newCategory = new Category({
-        category: categories[i],
+        category,
       });
 
       await newCategory.save();
@@ -60,9 +72,40 @@ router.post("/add-many-categories", adminAuth, async (req, res) => {
   }
 });
 
-// Delete category
-router.delete("/delete-category/:category", adminAuth, async (req, res) => {
+// Update category
+router.put("/update-category/:category", auth, async (req, res) => {
   try {
+    if (req.user.userType !== "Admin") {
+      return res
+        .status(401)
+        .json({ message: "Unauthorized!!! only Admin has the permission" });
+    }
+    const { category } = req.params;
+    const { newCategory } = req.body;
+
+    const updatedCategory = await Category.findOne({ category });
+
+    if (!updatedCategory) {
+      return res.status(400).json({ message: "Category does not exist" });
+    }
+
+    updatedCategory.category = newCategory;
+    await updatedCategory.save();
+
+    res.status(200).json({ message: "Category updated successfully" });
+  } catch (error) {
+    res.status(500).json(error);
+  }
+});
+
+// Delete category
+router.delete("/delete-category/:category", auth, async (req, res) => {
+  try {
+    if (req.user.userType !== "Admin") {
+      return res
+        .status(401)
+        .json({ message: "Unauthorized!!! only Admin has the permission" });
+    }
     const { category } = req.params;
 
     const deletedCategory = await Category.findOneAndDelete({ category });
