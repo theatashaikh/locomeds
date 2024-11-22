@@ -7,32 +7,27 @@ const addressSchema = new mongoose.Schema({
   addressLine: {
     type: String,
     required: true,
-    lowercase: true,
-  },
-  zone: {
-    type: String,
-    required: true,
-    lowercase: true,
+    capitalize: true,
   },
   city: {
     type: String,
     required: true,
-    lowercase: true,
+    capitalize: true,
   },
   district: {
     type: String,
     required: true,
-    lowercase: true,
+    capitalize: true,
   },
   state: {
     type: String,
     required: true,
-    lowercase: true,
+    capitalize: true,
   },
   country: {
     type: String,
     required: true,
-    lowercase: true,
+    capitalize: true,
     default: "india",
   },
   pincode: {
@@ -148,6 +143,11 @@ const Vendor = User.discriminator(
       default: "pending",
     },
     address: addressSchema,
+    zone: {
+      type: String,
+      required: true,
+      lowercase: true,
+    },
   })
 );
 

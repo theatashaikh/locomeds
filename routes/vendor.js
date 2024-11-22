@@ -15,6 +15,7 @@ router.post("/register", async (req, res) => {
       password,
       phoneNumber,
       address,
+      zone,
     } = req.body;
 
     if (!firstName) {
@@ -62,10 +63,13 @@ router.post("/register", async (req, res) => {
       !address.district ||
       !address.city ||
       !address.state ||
-      !address.pincode ||
-      !address.zone
+      !address.pincode
     ) {
       return res.status(400).json({ message: "Address is incomplete" });
+    }
+
+    if (!zone) {
+      return res.status(400).json({ message: "Zone is required" });
     }
 
     if (isEmail(email) === false) {
@@ -104,6 +108,7 @@ router.post("/register", async (req, res) => {
       phoneNumber,
       businessName,
       address,
+      zone,
     });
 
     const token = await vendor.generateAuthToken();
