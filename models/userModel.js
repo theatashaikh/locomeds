@@ -155,7 +155,7 @@ const Vendor = User.discriminator(
 const GeneralUser = User.discriminator(
   "GeneralUser",
   new mongoose.Schema({
-    address: addressSchema,
+    shippingAddresses: [addressSchema],
     alternativePhoneNumber: {
       type: String,
       trim: true,
