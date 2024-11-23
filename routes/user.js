@@ -7,7 +7,10 @@ const Cart = require("../models/cartModel");
 const Order = require("../models/orderModel");
 const Product = require("../models/productModel");
 const nodeMailer = require("nodemailer");
-const capitalizeFirstLetter = require("../utils/capitalizeFirstLetter");
+const {
+  sendEmailToVendorForNewOrder,
+  sendEmailToUserForOrderConfirmation,
+} = require("../utils/emailNotification");
 
 // Regiter a new user
 router.post("/register", async (req, res) => {
@@ -485,97 +488,136 @@ router.post("/checkout", auth, async (req, res) => {
       await product.save();
     }
 
-    await order.save();
-    // Delete the cart
-    await Cart.findOneAndDelete({ user: req.user._id });
-
-    // send email and push notification to the vendor
     const vendor = await Vendor.findOne({
       zone: req.body.zone,
       userType: "Vendor",
     });
+
     if (vendor) {
-      const transporter = nodeMailer.createTransport({
-        service: "gmail",
-        auth: {
-          user: process.env.GOOGLE_APP_EMAIL_FOR_NODEMAILER,
-          pass: process.env.GOOGLE_APP_PASSWORD_FOR_NODEMAILER,
-        },
-      });
+      await order.save();
+      // Delete the cart
+      await Cart.findOneAndDelete({ user: req.user._id });
 
-      const vendorMailOptions = {
-        from: process.env.GOOGLE_APP_EMAIL_FOR_NODEMAILER,
-        to: vendor.email,
-        subject: "New Order Received",
-        html: `
-        Dear <b>${vendor.firstName}</b>,
-
-        You have received a new order from <b>${capitalizeFirstLetter(
-          req.user.firstName
-        )} ${capitalizeFirstLetter(
-          req.user.lastName
-        )}</b>. Please find the order details below:
-
-        <b>Order ID:</b> ${order._id}
-        <b>Total Amount:</b> ${order.totalAmount}
-        <b>Total Amount after discount:</b> ${order.totalAmountAfterDiscount}
-        <b>Shipping Address:</b> ${order.shippingAddress.addressLine}, ${
-          order.shippingAddress.district
-        }, ${order.shippingAddress.city}, ${order.shippingAddress.state} - ${
-          order.shippingAddress.pincode
-        }
-        <b>Contact Number:</b> ${order.userContactNumber}
-
-        Please process this order at your earliest convenience.
-
-        Best regards,
-        <b>Locomeds</b>`,
-      };
-
-      transporter.sendMail(vendorMailOptions, (error, info) => {
-        if (error) {
-          console.error("Error sending email to vendor:", error);
-        } else {
-          console.log("Email sent to vendor:", info.response);
-        }
-      });
-
+      // send email and push notification to the vendor
+      sendEmailToVendorForNewOrder(vendor, order, req.user);
       // send email and push notification to the user
-      const userMailOptions = {
-        from: process.env.GOOGLE_APP_EMAIL_FOR_NODEMAILER,
-        to: req.user.email,
-        subject: "Order Confirmation",
-        html: `
-        Dear <b>${capitalizeFirstLetter(req.user.firstName)}</b>,
-
-        Your order has been placed successfully. Please find the order details below:
-
-        <b>Order ID:</b> ${order._id}
-        <b>Total Amount:</b> ${order.totalAmount}
-        <b>Total Amount after discount:</b> ${order.totalAmountAfterDiscount}
-        <b>Shipping Address:</b> ${order.shippingAddress.addressLine}, ${
-          order.shippingAddress.district
-        }, ${order.shippingAddress.city}, ${order.shippingAddress.state} - ${
-          order.shippingAddress.pincode
-        }
-        <b>Contact Number:</b> ${order.userContactNumber}
-
-        You will receive a notification once the order is processed.
-
-        Best regards,
-        <b>Locomeds</b>`,
-      };
-
-      transporter.sendMail(userMailOptions, (error, info) => {
-        if (error) {
-          console.error("Error sending email to user:", error);
-        } else {
-          console.log("Email sent to user:", info.response);
-        }
-      });
+      sendEmailToUserForOrderConfirmation(req.user, order);
+    } else {
+      return res.status(404).json({ message: "Vendor not found" });
     }
 
     res.status(201).json(order);
+  } catch (error) {
+    res.status(500).json(error);
+  }
+});
+
+// buy now
+
+router.post("/buy-now/:productId", auth, async (req, res) => {
+  try {
+    const {
+      quantity,
+      shippingAddress,
+      zone,
+      userContactNumber,
+      paymentMethod,
+      discountPercentage,
+    } = req.body;
+
+    const productId = req.params.productId;
+
+    if (!quantity) {
+      return res.status(400).json({ message: "Quantity is required" });
+    }
+
+    if (!shippingAddress) {
+      return res.status(400).json({ message: "Shipping address is required" });
+    }
+
+    if (!zone) {
+      return res.status(400).json({ message: "Zone is required" });
+    }
+
+    if (!userContactNumber) {
+      return res
+        .status(400)
+        .json({ message: "User contact number is required" });
+    }
+
+    if (!paymentMethod) {
+      return res.status(400).json({ message: "Payment method is required" });
+    }
+
+    const product = await Product.findOne({ _id: productId });
+
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    const totalAmount = product.price * quantity;
+    const discountAmount = (totalAmount * discountPercentage) / 100;
+    const totalAmountAfterDiscount = totalAmount - discountAmount;
+
+    const order = new Order({
+      user: req.user._id,
+      items: [{ product: productId, quantity }],
+      totalAmount,
+      discountPercentage,
+      totalAmountAfterDiscount,
+      discountAmount,
+      shippingAddress,
+      zone,
+      userContactNumber,
+      paymentMethod,
+    });
+
+    // Update the stock of the product
+    product.quantity -= quantity;
+    await product.save();
+
+    const vendor = await Vendor.findOne({
+      zone,
+      userType: "Vendor",
+    });
+
+    if (vendor) {
+      await order.save();
+
+      await order.populate("items.product");
+      // send email and push notification to the vendor
+      sendEmailToVendorForNewOrder(vendor, order, req.user);
+      // send email and push notification to the user
+      sendEmailToUserForOrderConfirmation(req.user, order);
+    } else {
+      return res.status(404).json({ message: "Vendor not found" });
+    }
+
+    res.status(201).json(order);
+  } catch (error) {
+    res.status(500).json(error.message);
+  }
+});
+
+// Get an order by ID
+router.get("/orders/:orderId", auth, async (req, res) => {
+  try {
+    const order = await Order.findOne({
+      _id: req.params.orderId,
+      user: req.user._id,
+    });
+    if (!order) return res.status(404).json({ message: "Order not found" });
+    res.status(200).json(order);
+  } catch (error) {
+    res.status(500).json(error);
+  }
+});
+
+// Get all orders
+router.get("/orders", auth, async (req, res) => {
+  try {
+    const orders = await Order.find({ user: req.user._id });
+    res.status(200).json(orders);
   } catch (error) {
     res.status(500).json(error);
   }

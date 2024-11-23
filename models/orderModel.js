@@ -36,6 +36,7 @@ const orderSchema = new mongoose.Schema({
   discountPercentage: { type: Number, default: 0, min: 0, max: 20 },
   discountAmount: { type: Number, default: 0 },
   totalAmountAfterDiscount: { type: Number, default: 0 },
+  deliveryCharge: { type: Number, default: 0 },
 });
 
 module.exports = mongoose.model("Order", orderSchema);
