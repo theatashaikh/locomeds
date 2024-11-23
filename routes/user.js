@@ -501,7 +501,7 @@ router.post("/checkout", auth, async (req, res) => {
       // send email and push notification to the vendor
       sendEmailToVendorForNewOrder(vendor, order, req.user);
       // send email and push notification to the user
-      sendEmailToUserForOrderConfirmation(req.user, order);
+      sendEmailToUserForOrderConfirmation(req.user, order, vendor);
     } else {
       return res.status(404).json({ message: "Vendor not found" });
     }
@@ -588,7 +588,7 @@ router.post("/buy-now/:productId", auth, async (req, res) => {
       // send email and push notification to the vendor
       sendEmailToVendorForNewOrder(vendor, order, req.user);
       // send email and push notification to the user
-      sendEmailToUserForOrderConfirmation(req.user, order);
+      sendEmailToUserForOrderConfirmation(req.user, order, vendor);
     } else {
       return res.status(404).json({ message: "Vendor not found" });
     }

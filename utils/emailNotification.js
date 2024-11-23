@@ -61,7 +61,7 @@ function sendEmailToVendorForNewOrder(vendor, order, user) {
     ${order.shippingAddress.district}, ${order.shippingAddress.state} - ${
       order.shippingAddress.pincode
     }<br><br>
-    <b>Contact Number:</b> ${order.userContactNumber}<br><br>
+    <b>Customer Contact Number:</b> ${order.userContactNumber}<br><br>
     Please process this order at your earliest convenience.<br><br> 
     Best regards,<br> 
     <b>Locomeds</b>`,
@@ -76,7 +76,7 @@ function sendEmailToVendorForNewOrder(vendor, order, user) {
   });
 }
 
-function sendEmailToUserForOrderConfirmation(user, order) {
+function sendEmailToUserForOrderConfirmation(user, order, vendor) {
   const userMailOptions = {
     from: process.env.GOOGLE_APP_EMAIL_FOR_NODEMAILER,
     to: user.email,
@@ -123,7 +123,7 @@ function sendEmailToUserForOrderConfirmation(user, order) {
     }, ${order.shippingAddress.city}, ${order.shippingAddress.state} - ${
       order.shippingAddress.pincode
     },<br>
-        <b>Contact Number:</b> ${order.userContactNumber},<br><br>
+        <b>Your Contact Number:</b> ${order.userContactNumber},<br><br>
 
         You will receive a notification once the order is processed.,<br><br>
 
