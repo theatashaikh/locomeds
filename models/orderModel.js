@@ -33,6 +33,7 @@ const orderSchema = new mongoose.Schema({
     enum: ["pending", "completed"],
     default: "pending",
   },
+  prescriptionsUrls: [{ type: String }],
   discountPercentage: { type: Number, default: 0, min: 0, max: 20 },
   discountAmount: { type: Number, default: 0 },
   totalAmountAfterDiscount: { type: Number, default: 0 },

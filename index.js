@@ -8,6 +8,7 @@ const vendorRouter = require("./routes/vendor");
 const userRouter = require("./routes/user");
 const categoryRouter = require("./routes/category");
 const productRouter = require("./routes/product");
+const couponRouter = require("./routes/coupon");
 const connectToDB = require("./db");
 
 // Connect to the database
@@ -26,3 +27,4 @@ app.use("/vendor", vendorRouter);
 app.use("/user", userRouter);
 app.use("/category", categoryRouter);
 app.use("/product", productRouter);
+app.use("/coupon", couponRouter);

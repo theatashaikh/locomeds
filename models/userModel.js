@@ -7,27 +7,22 @@ const addressSchema = new mongoose.Schema({
   addressLine: {
     type: String,
     required: true,
-    capitalize: true,
   },
   city: {
     type: String,
     required: true,
-    capitalize: true,
   },
   district: {
     type: String,
     required: true,
-    capitalize: true,
   },
   state: {
     type: String,
     required: true,
-    capitalize: true,
   },
   country: {
     type: String,
     required: true,
-    capitalize: true,
     default: "india",
   },
   pincode: {

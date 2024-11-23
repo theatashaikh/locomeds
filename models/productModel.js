@@ -25,6 +25,10 @@ const productSchema = new mongoose.Schema({
     required: true,
     trim: true,
   },
+  usage: {
+    type: String,
+    trim: true,
+  },
   category: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Category",
@@ -34,12 +38,10 @@ const productSchema = new mongoose.Schema({
     type: String,
     trim: true,
   },
-  isAvailable: {
-    type: Boolean,
-    default: true,
-  },
   isPrescriptionNecessary: {
     type: Boolean,
+    required: true,
+    default: false,
   },
   isFeatured: {
     type: Boolean,

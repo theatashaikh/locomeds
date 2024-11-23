@@ -76,7 +76,7 @@ function sendEmailToVendorForNewOrder(vendor, order, user) {
   });
 }
 
-function sendEmailToUserForOrderConfirmation(user, order, vendor) {
+function sendEmailToUserForOrderConfirmation(user, order) {
   const userMailOptions = {
     from: process.env.GOOGLE_APP_EMAIL_FOR_NODEMAILER,
     to: user.email,
