@@ -1,9 +1,9 @@
 const { bucket } = require("../config/firebase.config");
 const { format } = require("url");
 
-const uploadToFirebase = async (file) => {
+const uploadToFirebase = async (file, directory = "products") => {
   try {
-    const fileName = `products/${Date.now()}-${file.originalname}`;
+    const fileName = `${directory}/${Date.now()}-${file.originalname}`;
     const fileUpload = bucket.file(fileName);
 
     const blobStream = fileUpload.createWriteStream({

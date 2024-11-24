@@ -7,8 +7,10 @@ const adminRouter = require("./routes/admin");
 const vendorRouter = require("./routes/vendor");
 const userRouter = require("./routes/user");
 const categoryRouter = require("./routes/category");
+const cartRouter = require("./routes/cart");
 const productRouter = require("./routes/product");
 const couponRouter = require("./routes/coupon");
+const zoneRouter = require("./routes/zone");
 const connectToDB = require("./db");
 
 // Connect to the database
@@ -26,5 +28,7 @@ app.use("/admin", adminRouter);
 app.use("/vendor", vendorRouter);
 app.use("/user", userRouter);
 app.use("/category", categoryRouter);
+app.use("/cart", cartRouter);
 app.use("/product", productRouter);
 app.use("/coupon", couponRouter);
+app.use("/zone", zoneRouter);

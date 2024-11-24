@@ -6,11 +6,14 @@ const auth = require("../middlewares/auth");
 const Cart = require("../models/cartModel");
 const Order = require("../models/orderModel");
 const Product = require("../models/productModel");
+const Coupon = require("../models/couponModel");
 const nodeMailer = require("nodemailer");
 const {
   sendEmailToVendorForNewOrder,
   sendEmailToUserForOrderConfirmation,
 } = require("../utils/emailNotification");
+const upload = require("../middlewares/uploads");
+const { uploadToFirebase } = require("../utils/firebase.utils");
 
 // Regiter a new user
 router.post("/register", async (req, res) => {
@@ -356,248 +359,300 @@ router.get("/profile", auth, async (req, res) => {
   }
 });
 
-// Add a product to the cart
-router.post("/add-to-cart", auth, async (req, res) => {
-  let { productId, quantity } = req.body;
-
-  if (!productId) {
-    return res.status(400).json({ message: "Product ID is required" });
-  }
-
-  if (!quantity) {
-    quantity = 1;
-  }
-
-  try {
-    let cart = await Cart.findOne({ user: req.user._id });
-    if (!cart) {
-      cart = new Cart({ user: req.user._id, items: [] });
-    }
-
-    // Check if the product is already in the cart
-    const itemIndex = cart.items.findIndex(
-      (item) => item.product.toString() === productId
-    );
-
-    // If the product is already in the cart, update the quantity
-    if (itemIndex > -1) {
-      cart.items[itemIndex].quantity += quantity;
-    } else {
-      // If the product is not in the cart, add it
-      cart.items.push({ product: productId, quantity });
-    }
-
-    cart.updatedAt = Date.now();
-    await cart.save();
-    res.status(200).json(cart);
-  } catch (err) {
-    res
-      .status(500)
-      .json({ message: "Error adding to cart", error: err.message });
-  }
-});
-
-// Get the cart
-router.get("/cart", auth, async (req, res) => {
-  try {
-    const cart = await Cart.findOne({ user: req.user._id }).populate(
-      "items.product"
-    );
-    if (!cart) return res.status(404).json({ message: "Cart not found" });
-    res.status(200).json(cart);
-  } catch (err) {
-    res
-      .status(500)
-      .json({ message: "Error fetching cart", error: err.message });
-  }
-});
-
-// Remove a product from the cart
-router.delete("/cart/:productId", auth, async (req, res) => {
-  try {
-    const cart = await Cart.findOne({ user: req.user._id });
-    if (!cart) return res.status(404).json({ message: "Cart not found" });
-
-    cart.items = cart.items.filter(
-      (item) => item.product.toString() !== req.params.productId
-    );
-    cart.updatedAt = Date.now();
-    await cart.save();
-
-    res.status(200).json(cart);
-  } catch (err) {
-    res
-      .status(500)
-      .json({ message: "Error removing product", error: err.message });
-  }
-});
-
-// Clear the cart
-
-router.delete("/clear-cart", auth, async (req, res) => {
-  try {
-    const cart = await Cart.findOne({ user: req.user._id });
-    if (!cart) return res.status(404).json({ message: "Cart not found" });
-
-    cart.items = [];
-    cart.updatedAt = Date.now();
-    await cart.save();
-
-    res.status(200).json(cart);
-  } catch (error) {
-    res.status(500).json(error);
-  }
-});
-
 // checkout
-router.post("/checkout", auth, async (req, res) => {
-  try {
-    const cart = await Cart.findOne({ user: req.user._id }).populate(
-      "items.product"
-    );
+router.post(
+  "/checkout",
+  auth,
+  upload.array("prescriptions", 4),
+  async (req, res) => {
+    try {
+      const {
+        zone,
+        userContactNumber,
+        paymentMethod,
+        shippingAddress,
+        couponCode,
+      } = req.body;
 
-    if (!cart) return res.status(404).json({ message: "Cart not found" });
+      if (!zone) {
+        return res.status(400).json({ message: "Zone is required" });
+      }
 
-    const totalAmount = cart.items.reduce(
-      (acc, item) => acc + item.product.price * item.quantity,
-      0
-    );
+      if (!userContactNumber) {
+        return res
+          .status(400)
+          .json({ message: "User contact number is required" });
+      }
 
-    const discountPercentage = req.body.discountPercentage;
-    const discountAmount = (totalAmount * discountPercentage) / 100;
-    const totalAmountAfterDiscount = totalAmount - discountAmount;
+      if (!paymentMethod) {
+        return res.status(400).json({ message: "Payment method is required" });
+      }
 
-    const order = new Order({
-      user: req.user._id,
-      items: cart.items,
-      totalAmount,
-      discountPercentage,
-      totalAmountAfterDiscount,
-      discountAmount,
-      shippingAddress: req.body.shippingAddress,
-      zone: req.body.zone,
-      userContactNumber: req.body.userContactNumber,
-      paymentMethod: req.body.paymentMethod,
-    });
+      if (!shippingAddress) {
+        return res
+          .status(400)
+          .json({ message: "Shipping address is required" });
+      }
 
-    // Update the stock of the products
+      const cart = await Cart.findOne({ user: req.user._id }).populate(
+        "items.product"
+      );
 
-    for (let item of cart.items) {
-      const product = await Product.findOne({ _id: item.product });
-      product.quantity -= item.quantity;
-      await product.save();
+      if (!cart) return res.status(404).json({ message: "Cart not found" });
+
+      // if cart.items.product.quantity < cart.items.quantity
+      for (let item of cart.items) {
+        if (item.product.quantity < item.quantity) {
+          return res.status(400).json({
+            message: `${item.product.name} is out of stock only ${item.product.quantity} left`,
+          });
+        }
+      }
+
+      // Calculate the total amount by summing up the price of all the products in the cart
+      const totalAmount = cart.items.reduce(
+        (acc, item) => acc + item.product.price * item.quantity,
+        0
+      );
+
+      let coupon;
+
+      if (couponCode) {
+        coupon = await Coupon.findOne({ code: couponCode });
+
+        if (!coupon) {
+          return res.status(404).json({ message: "Coupon not found" });
+        }
+      }
+
+      let discountPercentage = 0;
+      let discountAmount = 0;
+      let totalAmountAfterDiscount = totalAmount;
+
+      // If the coupon is valid, calculate the discount amount
+      if (coupon) {
+        discountPercentage = coupon.discountPercentage;
+        discountAmount = (totalAmount * discountPercentage) / 100;
+        // If the discount amount is greater than the max discount amount, set the discount amount to the max discount amount
+        if (discountAmount > coupon.maxDiscount) {
+          discountAmount = coupon.maxDiscount;
+        }
+
+        totalAmountAfterDiscount = totalAmount - discountAmount;
+      }
+
+      let prescriptionsUrls = [];
+
+      const prescriptionsUrlsNeeded = cart.items.some(
+        (item) => item.product.isPrescriptionNecessary === true
+      );
+
+      if (prescriptionsUrlsNeeded && req.files.length > 0) {
+        for (const file of req.files) {
+          const imageUrl = await uploadToFirebase(file, "prescriptions");
+          prescriptionsUrls.push(imageUrl);
+        }
+      }
+
+      // if cart.items.product.isPrescriptionNecessary === true
+      for (let item of cart.items) {
+        if (
+          item.product.isPrescriptionNecessary === true &&
+          prescriptionsUrls.length === 0
+        ) {
+          return res.status(400).json({
+            message: `${item.product.name} requires a prescription`,
+          });
+        }
+      }
+
+      const order = new Order({
+        user: req.user._id,
+        items: cart.items,
+        totalAmount,
+        discountPercentage,
+        totalAmountAfterDiscount,
+        discountAmount,
+        shippingAddress: JSON.parse(shippingAddress),
+        zone: zone,
+        userContactNumber: userContactNumber,
+        paymentMethod: paymentMethod,
+        prescriptionsUrls,
+      });
+
+      // Update the stock of the products
+      for (let item of cart.items) {
+        const product = await Product.findOne({ _id: item.product });
+        product.quantity -= item.quantity;
+        await product.save();
+      }
+
+      const vendor = await Vendor.findOne({
+        zone: zone,
+        userType: "Vendor",
+      });
+
+      if (vendor) {
+        await order.save();
+        // Delete the cart
+        await Cart.findOneAndDelete({ user: req.user._id });
+
+        // send email and push notification to the vendor
+        sendEmailToVendorForNewOrder(vendor, order, req.user);
+        // send email and push notification to the user
+        sendEmailToUserForOrderConfirmation(req.user, order);
+      } else {
+        return res.status(404).json({ message: "Vendor not found" });
+      }
+
+      res.status(201).json(order);
+    } catch (error) {
+      res.status(500).json(error.message);
     }
-
-    const vendor = await Vendor.findOne({
-      zone: req.body.zone,
-      userType: "Vendor",
-    });
-
-    if (vendor) {
-      await order.save();
-      // Delete the cart
-      await Cart.findOneAndDelete({ user: req.user._id });
-
-      // send email and push notification to the vendor
-      sendEmailToVendorForNewOrder(vendor, order, req.user);
-      // send email and push notification to the user
-      sendEmailToUserForOrderConfirmation(req.user, order, vendor);
-    } else {
-      return res.status(404).json({ message: "Vendor not found" });
-    }
-
-    res.status(201).json(order);
-  } catch (error) {
-    res.status(500).json(error);
   }
-});
+);
 
 // buy now
 
-router.post("/buy-now/:productId", auth, async (req, res) => {
-  try {
-    const {
-      quantity,
-      shippingAddress,
-      zone,
-      userContactNumber,
-      paymentMethod,
-      discountPercentage,
-    } = req.body;
+router.post(
+  "/buy-now/:productId",
+  auth,
+  upload.array("prescriptions", 4),
+  async (req, res) => {
+    try {
+      const {
+        quantity,
+        shippingAddress,
+        zone,
+        userContactNumber,
+        paymentMethod,
+        couponCode,
+      } = req.body;
 
-    const productId = req.params.productId;
+      const productId = req.params.productId;
 
-    if (!quantity) {
-      return res.status(400).json({ message: "Quantity is required" });
+      if (!quantity) {
+        return res.status(400).json({ message: "Quantity is required" });
+      }
+
+      if (!shippingAddress) {
+        return res
+          .status(400)
+          .json({ message: "Shipping address is required" });
+      }
+
+      if (!zone) {
+        return res.status(400).json({ message: "Zone is required" });
+      }
+
+      if (!userContactNumber) {
+        return res
+          .status(400)
+          .json({ message: "User contact number is required" });
+      }
+
+      if (!paymentMethod) {
+        return res.status(400).json({ message: "Payment method is required" });
+      }
+
+      const product = await Product.findOne({ _id: productId });
+
+      if (!product) {
+        return res.status(404).json({ message: "Product not found" });
+      }
+
+      if (product.quantity < quantity) {
+        return res.status(400).json({
+          message: `Product is out of stock only ${product.quantity} left`,
+        });
+      }
+
+      let coupon;
+
+      if (couponCode) {
+        coupon = await Coupon.findOne({ code: couponCode });
+
+        if (!coupon) {
+          return res.status(404).json({ message: "Coupon not found" });
+        }
+      }
+
+      const totalAmount = product.price * quantity;
+
+      let discountPercentage = 0;
+      let discountAmount = 0;
+      let totalAmountAfterDiscount = totalAmount;
+
+      // If the coupon is valid, calculate the discount amount
+      if (coupon) {
+        discountPercentage = coupon.discountPercentage;
+        discountAmount = (totalAmount * discountPercentage) / 100;
+        // If the discount amount is greater than the max discount amount, set the discount amount to the max discount amount
+        if (discountAmount > coupon.maxDiscount) {
+          discountAmount = coupon.maxDiscount;
+        }
+
+        totalAmountAfterDiscount = totalAmount - discountAmount;
+      }
+
+      const prescriptionsUrls = [];
+
+      const prescriptionsUrlsNeeded = product.isPrescriptionNecessary;
+
+      if (prescriptionsUrlsNeeded && req.files.length > 0) {
+        for (const file of req.files) {
+          const imageUrl = await uploadToFirebase(file, "prescriptions");
+          prescriptionsUrls.push(imageUrl);
+        }
+      }
+
+      if (prescriptionsUrlsNeeded && prescriptionsUrls.length === 0) {
+        return res.status(400).json({
+          message: `${product.name} requires a prescription`,
+        });
+      }
+
+      const order = new Order({
+        user: req.user._id,
+        items: [{ product: productId, quantity }],
+        totalAmount,
+        discountPercentage,
+        totalAmountAfterDiscount,
+        discountAmount,
+        shippingAddress: JSON.parse(shippingAddress),
+        zone,
+        userContactNumber,
+        paymentMethod,
+        prescriptionsUrls,
+      });
+
+      // Update the stock of the product
+      product.quantity -= quantity;
+      await product.save();
+
+      const vendor = await Vendor.findOne({
+        zone,
+        userType: "Vendor",
+      });
+
+      if (vendor) {
+        await order.save();
+
+        await order.populate("items.product");
+        // send email and push notification to the vendor
+        sendEmailToVendorForNewOrder(vendor, order, req.user);
+        // send email and push notification to the user
+        sendEmailToUserForOrderConfirmation(req.user, order);
+      } else {
+        return res.status(404).json({ message: "Vendor not found" });
+      }
+
+      res.status(201).json(order);
+    } catch (error) {
+      res.status(500).json(error.message);
     }
-
-    if (!shippingAddress) {
-      return res.status(400).json({ message: "Shipping address is required" });
-    }
-
-    if (!zone) {
-      return res.status(400).json({ message: "Zone is required" });
-    }
-
-    if (!userContactNumber) {
-      return res
-        .status(400)
-        .json({ message: "User contact number is required" });
-    }
-
-    if (!paymentMethod) {
-      return res.status(400).json({ message: "Payment method is required" });
-    }
-
-    const product = await Product.findOne({ _id: productId });
-
-    if (!product) {
-      return res.status(404).json({ message: "Product not found" });
-    }
-
-    const totalAmount = product.price * quantity;
-    const discountAmount = (totalAmount * discountPercentage) / 100;
-    const totalAmountAfterDiscount = totalAmount - discountAmount;
-
-    const order = new Order({
-      user: req.user._id,
-      items: [{ product: productId, quantity }],
-      totalAmount,
-      discountPercentage,
-      totalAmountAfterDiscount,
-      discountAmount,
-      shippingAddress,
-      zone,
-      userContactNumber,
-      paymentMethod,
-    });
-
-    // Update the stock of the product
-    product.quantity -= quantity;
-    await product.save();
-
-    const vendor = await Vendor.findOne({
-      zone,
-      userType: "Vendor",
-    });
-
-    if (vendor) {
-      await order.save();
-
-      await order.populate("items.product");
-      // send email and push notification to the vendor
-      sendEmailToVendorForNewOrder(vendor, order, req.user);
-      // send email and push notification to the user
-      sendEmailToUserForOrderConfirmation(req.user, order);
-    } else {
-      return res.status(404).json({ message: "Vendor not found" });
-    }
-
-    res.status(201).json(order);
-  } catch (error) {
-    res.status(500).json(error.message);
   }
-});
+);
 
 // Get an order by ID
 router.get("/orders/:orderId", auth, async (req, res) => {
