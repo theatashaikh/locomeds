@@ -3,6 +3,11 @@ const { Vendor } = require("../models/userModel");
 const { isEmail } = require("validator");
 const auth = require("../middlewares/auth");
 const bcrypt = require("bcryptjs");
+const Order = require("../models/orderModel");
+const Product = require("../models/productModel");
+const {
+  sendEmailToUserForOrderStatusUpdate,
+} = require("../utils/emailNotification");
 
 // Regiter a new vendor
 router.post("/register", async (req, res) => {
@@ -267,6 +272,76 @@ router.post("/logout", auth, async (req, res) => {
     res.json({ message: "Logged out successfully" });
   } catch (error) {
     res.status(500).send(error);
+  }
+});
+
+// Read their orders
+router.get("/orders/all", auth, async (req, res) => {
+  try {
+    if (req.user.userType !== "Vendor") {
+      return res
+        .status(401)
+        .json({ message: "Unauthorized!!! only Vendor has the permission" });
+    }
+
+    const orders = await Order.find({ zone: req.user.zone });
+    res.json(orders);
+  } catch (error) {
+    return res.status(500).send(error.message);
+  }
+});
+
+// Read their order by ID
+router.get("/order/:id", auth, async (req, res) => {
+  try {
+    if (req.user.userType !== "Vendor") {
+      return res
+        .status(401)
+        .json({ message: "Unauthorized!!! only Vendor has the permission" });
+    }
+
+    const order = await Order.findOne({
+      _id: req.params.id,
+      zone: req.user.zone,
+    });
+
+    if (!order) {
+      return res.status(400).send("Order not found");
+    }
+
+    res.json(order);
+  } catch (error) {
+    return res.status(500).send(error.message);
+  }
+});
+
+// Change status of the order
+router.put("/order/:id", auth, async (req, res) => {
+  try {
+    const { status } = req.body;
+
+    const order = await Order.findOne({
+      _id: req.params.id,
+      zone: req.user.zone,
+    }).populate("user");
+
+    const product_ids = order.items.map((item) => item.product.toString());
+
+    const products = await Product.find({ _id: { $in: product_ids } });
+
+    if (!order) {
+      return res.status(400).send("Order not found");
+    }
+
+    order.status = status;
+
+    // send email and push notification to the user for status update
+    sendEmailToUserForOrderStatusUpdate(order, req.user, products);
+
+    await order.save();
+    res.send("Order status changes");
+  } catch (error) {
+    return res.status(500).send(error.message);
   }
 });
 

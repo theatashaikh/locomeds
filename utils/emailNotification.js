@@ -140,7 +140,74 @@ function sendEmailToUserForOrderConfirmation(user, order) {
   });
 }
 
+function sendEmailToUserForOrderStatusUpdate(order, vendor, products) {
+  const userMailOptions = {
+    from: process.env.GOOGLE_APP_EMAIL_FOR_NODEMAILER,
+    to: order.user.email,
+    subject: "Order Status updated",
+    html: `
+        Dear <b>${capitalizeFirstLetter(order.user.firstName)}</b>,,<br><br>
+
+        Your order has been <b>${
+          order.status
+        }</b> successfully. Please find the order details below:</b>,<br><br>
+
+        <b>Order ID:</b> ${order._id},<br>
+        <b>Items:</b><br> 
+        <table border="1" cellpadding="5" cellspacing="0" bordercolor="#dddddd">
+        <thead>
+        <tr>
+        <th>Sr no.</th><th>Product Name</th><th>Quantity</th><th>Price</th><th>Total</th>
+        </tr> 
+        </thead> 
+        <tbody> 
+        ${products
+          .map(
+            (product, idx) =>
+              ` <tr><td>${idx + 1}</td><td>${product.name}</td> <td>${
+                product.quantity
+              }</td><td>${product.price}</td><td>${
+                product.price * product.quantity
+              }</td> </tr>`
+          )
+          .join("")} 
+          <tr>
+            <td colspan="4"><b>Total</b></td>
+            <td><b>₹${order.totalAmount}</b></td>
+        </tr>
+        </tbody>
+        </table><br><br>
+        <b>Amount:</b> ₹${order.totalAmount},<br>
+        <b>Discount:</b> ${order.discountPercentage}%,<br>
+        <b>Amount after discount:</b> ₹${order.totalAmountAfterDiscount},<br>
+        <b>Delivery charge:</b> ₹${order.deliveryCharge},<br>
+        <h2>Total: ₹${
+          order.totalAmountAfterDiscount + order.deliveryCharge
+        },</h2><br>
+        <b>Shipping Address:</b> ${order.shippingAddress.addressLine}, ${
+      order.shippingAddress.district
+    }, ${order.shippingAddress.city}, ${order.shippingAddress.state} - ${
+      order.shippingAddress.pincode
+    },<br>
+        <b>Your Contact Number:</b> ${order.userContactNumber},<br><br>
+
+        <b>Contact us for inquery:</b> ${vendor.phoneNumber}<br><br>
+
+        Best regards,<br>
+        <b>Locomeds</b>`,
+  };
+
+  transporter.sendMail(userMailOptions, (error, info) => {
+    if (error) {
+      console.error("Error sending email to user:", error);
+    } else {
+      console.log("Email sent to user:", info.response);
+    }
+  });
+}
+
 module.exports = {
   sendEmailToVendorForNewOrder,
   sendEmailToUserForOrderConfirmation,
+  sendEmailToUserForOrderStatusUpdate,
 };
